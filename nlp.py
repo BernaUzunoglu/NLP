@@ -173,16 +173,44 @@ plt.show()
 # 3. Sentiment Analysis (Duygu Analizi)
 ##################################################
 
+df["reviewText"].head()
+# nltk.download('vader_lexicon')
+
+sia = SentimentIntensityAnalyzer()  # metinlerdeki duygusal analizleri yapan bir method
+sia.polarity_scores('The film was awesome')
+# {'neg': 0.0, 'neu': 0.423, 'pos': 0.577, 'compound': 0.6249}
+
+sia.polarity_scores("I like this music but it is not good as the other one")
+# {'neg': 0.209, 'neu': 0.673, 'pos': 0.118, 'compound': -0.3311}
+
+# Her bir satırdaki veriyi skorlayalım
+df["reviewText"][0:10].apply(lambda x: sia.polarity_scores(x))
+
+df["reviewText"][0:10].apply(lambda x: sia.polarity_scores(x)["compound"])
+
+df["polarity_score"] = df["reviewText"].apply(lambda x: sia.polarity_scores(x)["compound"])
 
 ###############################
 # 4. Feature Engineering
 ###############################
 
+df["reviewText"][0:10].apply(lambda x: "pos" if sia.polarity_scores(x)["compound"] > 0 else "neg")
+df["sentiment_label"] = df["reviewText"].apply(lambda x: "pos" if sia.polarity_scores(x)["compound"] > 0 else "neg")
 
+df["sentiment_label"].value_counts()
+
+df.groupby("sentiment_label")["overall"].mean()
+
+df["sentiment_label"] = LabelEncoder().fit_transform(df["sentiment_label"])
+
+y = df["sentiment_label"]
+X = df["reviewText"]
 ###############################
-# Count Vectors
+# Count Vectors - Kelimelerin Vektörleştirilmesi
+# Amaç : Kelimeleri sayısal temsillere dönüştürme işlemi
 ###############################
 
+# Kelime Vektörleştirme Yöntemleri
 # Count Vectors: frekans temsiller
 # TF-IDF Vectors: normalize edilmiş frekans temsiller
 # Word Embeddings (Word2Vec, GloVe, BERT vs)
@@ -194,23 +222,53 @@ plt.show()
 # characters
 # karakterlerin numerik temsilleri
 
-# ngram
-
+# ngram :kelime öbeklerine göre özellik üretmeyi ifade eder.
+a = """Bu örneği anlaşılabilmesi için daha uzun bir metin üzerinden göstereceğim.
+N-gram'lar birlikte kullanılan kelimelerin kombinasyonlarıını gösterir ve feature üretmek için kuallanılır"""
+TextBlob(a).ngrams(3)
 
 ###############################
 # Count Vectors
 ###############################
+from sklearn.feature_extraction.text import CountVectorizer
 
+corpus = ['This is the first document.',
+          'This document is the second document.',
+          'And this is the third one.',
+          'Is this the first document?']
 
 # word frekans
+vectorizer = CountVectorizer()
+X_c = vectorizer.fit_transform(corpus)
+vectorizer.get_feature_names_out()  # Eşsiz kelimelerin isimlerini getirelim
 
+# ['and', 'document', 'first', 'is', 'one', 'second', 'the', 'third','this'] bu her bir kelimeyi sutun olarak düşünüp. Cümlelerde geçiyor ise 1 geçmiyorsa 0
+X_c.toarray()  # Kelimeleri nümerik olarak ifade ettik
 
 # n-gram frekans
+# Kelimeleri ikişerli(ngram_range=(2, 2)) öbekler halinde vektörleştirelim
+vectorizer2 = CountVectorizer(analyzer='word', ngram_range=(2, 2))
+X_n = vectorizer2.fit_transform(corpus)
+vectorizer2.get_feature_names_out()
+X_n.toarray()
 
+# Veri setimizdeki reviewText değerlerimizin count vector yöntemi ile vektörleştirelim.
+vectorizer = CountVectorizer()
+X_count = vectorizer.fit_transform(X)
 
+vectorizer.get_feature_names_out()[10:15]
+X_count.toarray()
 ###############################
 # TF-IDF
 ###############################
+# '''TF-IDF (Term Frequency-Inverse Document Frequency), bir kelimenin bir belge içindeki önemini değerlendiren bir istatistiksel ölçüttür. TF (Term Frequency), kelimenin belgede ne sıklıkta geçtiğini, IDF (Inverse Document Frequency) ise kelimenin tüm belgeler içinde ne kadar nadir olduğunu hesaplar. Bu kombinasyon, özellikle bilgi alma ve metin madenciliği uygulamalarında önemlidir.'''
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+tf_idf_word_vectorizer = TfidfVectorizer()  # ön tanımlı değeri word- kelime olarak çalışmaktadır.
+X_tf_idf_word = tf_idf_word_vectorizer.fit_transform(X)
+
+tf_idf_ngram_vectorizer = TfidfVectorizer(ngram_range=(2, 3))
+X_tf_idf_ngram = tf_idf_ngram_vectorizer.fit_transform(X)
 
 
 ###############################
@@ -224,21 +282,61 @@ plt.show()
 # 5. Sentiment Modeling
 
 ###############################
-# Logistic Regression
+# Logistic Regression - Amacımız gelen yorumun pozitif mi negatif mi olduğunu tahmin edecek bir model kurmak.
 ###############################
+log_model = LogisticRegression().fit(X_tf_idf_word, y)
 
+cross_val_score(log_model,
+                X_tf_idf_word,
+                y,
+                scoring="accuracy",
+                cv=5).mean()
+
+# ÇIKTI : np.float64(0.830111902339776) sonuca göre tahminlerimizin %83 başarılı olacaktır..
+
+new_review = pd.Series("this product is great")
+new_review1 = pd.Series("look at that shit very bad")
+
+# Gelen yorumu modele uygun formatın haline getirmek için tf-idf ugulayalım.
+new_review = TfidfVectorizer().fit(X).transform(new_review)
+new_review1 = TfidfVectorizer().fit(X).transform(new_review1)
+
+log_model.predict(new_review)
+log_model.predict(new_review1)
+
+random_review = pd.Series(df['reviewText'].sample(1).values)
+
+new_review = TfidfVectorizer().fit(X).transform(random_review)
+log_model.predict(new_review)
 
 ###############################
 # Random Forests
 ###############################
 
 # Count Vectors
-
+rf_model = RandomForestClassifier().fit(X_count, y)
+cross_val_score(rf_model,
+                X_count,
+                y,
+                cv=5,
+                n_jobs=1).mean()  # ÇIKTI : np.float64(0.8419125127161751)
 
 # TF-IDF Word-Level
+rf_model = RandomForestClassifier().fit(X_tf_idf_word, y)
+cross_val_score(rf_model,
+                X_count,
+                y,
+                cv=5,
+                n_jobs=1).mean()  # ÇIKTI : np.float64(0.8443540183112919)
 
 
 # TF-IDF N-GRAM
+rf_model = RandomForestClassifier().fit(X_tf_idf_ngram, y)
+cross_val_score(rf_model,
+                X_count,
+                y,
+                cv=5,
+                n_jobs=1).mean()  # ÇIKTI :
 
 
 ###############################
