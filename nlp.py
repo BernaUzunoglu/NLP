@@ -136,7 +136,7 @@ plt.show()
 text = " ".join(i for i in df.reviewText)
 
 wordcloud = WordCloud().generate(text)
-plt.imshow(wordcloud,interpolation="bilinear")
+plt.imshow(wordcloud, interpolation="bilinear")
 plt.axis("off")
 plt.show()
 
@@ -342,3 +342,23 @@ cross_val_score(rf_model,
 ###############################
 # Hiperparametre Optimizasyonu
 ###############################
+
+rf_model = RandomForestClassifier(random_state=17)
+
+# Random Forestin daha baarılı tahminler çıkarması için hiper parametrelerini ayarlayalım.
+rf_params = {"max_depth": [8, None],
+             "max_features": [7, "auto"],
+             "min_samples_split": [2, 5, 8],
+             "n_estimators": [100, 200]}
+
+rf_best_grid = GridSearchCV(rf_model,
+                            rf_params,
+                            cv=5,
+                            n_jobs=1,
+                            verbose=1).fit(X_count, y)
+
+rf_best_grid.best_params_
+
+rf_final = rf_model.set_params(**rf_best_grid.best_params_, random_state=17).fit(X_count, y)
+
+cross_val_score(rf_final, X_count, y, cv=5, n_jobs=1).mean()
